@@ -40,7 +40,7 @@ staging_events_table_create= ("""
         session_id  INTEGER NOT NULL SORTKEY DISTKEY,
         song        VARCHAR,
         status      INTEGER,
-        ts          BIGINT NOT NULL,
+        ts          TIMESTAMP NOT NULL,
         user_agent  VARCHAR,
         user_id     INTEGER);
 """)
@@ -63,12 +63,12 @@ staging_songs_table_create = ("""
 
 songplay_table_create = ("""
     CREATE TABLE IF NOT EXISTS songplays (
-        songplay_id     BIGINT identity(0,1) sortkey, 
-        start_time      TIMESTAMP,
-        user_id         INTEGER,
+        songplay_id     BIGINT identity(0,1) SORTKEY PRIMARY KEY, 
+        start_time      TIMESTAMP   NOT NULL,
+        user_id         INTEGER     NOT NULL,
         level           VARCHAR,
-        song_id         VARCHAR,
-        artist_id       VARCHAR,
+        song_id         VARCHAR     NOT NULL,
+        artist_id       VARCHAR     NOT NULL,
         session_id      INTEGER,
         location        VARCHAR,
         user_agent      VARCHAR);
@@ -76,7 +76,7 @@ songplay_table_create = ("""
 
 user_table_create = ("""
     CREATE TABLE IF NOT EXISTS users (
-        user_id     INTEGER sortkey, 
+        user_id     INTEGER SORTKEY PRIMARY KEY, 
         first_name  VARCHAR,
         lASt_name   VARCHAR,
         gender      VARCHAR,
@@ -85,16 +85,16 @@ user_table_create = ("""
 
 song_table_create = ("""
     CREATE TABLE IF NOT EXISTS songs (
-        song_id     VARCHAR sortkey, 
+        song_id     VARCHAR SORTKEY PRIMARY KEY, 
         title       VARCHAR(500),
-        artist_id   VARCHAR,
+        artist_id   VARCHAR NOT NULL,
         year        INTEGER,
         duration    NUMERIC);
 """)
 
 artist_table_create = ("""
     CREATE TABLE IF NOT EXISTS artists (
-        artist_id   VARCHAR sortkey, 
+        artist_id   VARCHAR SORTKEY PRIMARY KEY, 
         name        VARCHAR(500),
         location    VARCHAR(500),
         latitude    NUMERIC,
@@ -103,13 +103,13 @@ artist_table_create = ("""
 
 time_table_create = ("""
     CREATE TABLE IF NOT EXISTS time (
-        start_time  TIMESTAMP sortkey, 
+        start_time  TIMESTAMP SORTKEY PRIMARY KEY, 
         hour        INTEGER,
         day         INTEGER,
         week        INTEGER,
         month       INTEGER,
         year        INTEGER,
-        weekday     INTEGER);
+        weekday     VARCHAR);
 """)
 
 # STAGING TABLES
@@ -118,6 +118,7 @@ staging_events_copy = ("""
     copy staging_events FROM {}
     credentials 'aws_iam_role={}'
     json {}
+    timeformat 'epochmillisecs'
     region 'us-west-2';
 """).format(logData, arn, logJsonPath)
 
@@ -134,7 +135,7 @@ songplay_table_insert = ("""
     INSERT INTO songplays (start_time, user_id, level, song_id, 
         artist_id, session_id, location, user_agent)
     SELECT  
-        timestamp 'epoch' + e.ts / 1000 * INTERVAL '1 second' AS start_time,
+        e.ts,
         e.user_id, 
         e.level, 
         s.song_id, 
@@ -161,7 +162,8 @@ user_table_insert = ("""
         SELECT MAX(ts) as ts, user_id
         FROM staging_events
         GROUP by user_id
-    ) ei on e.user_id = ei.user_id and e.ts = ei.ts;
+    ) ei on e.user_id = ei.user_id and e.ts = ei.ts
+    WHERE e.page = 'NextSong';
 """)
 
 song_table_insert = ("""
@@ -189,27 +191,20 @@ artist_table_insert = ("""
 time_table_insert = ("""
     INSERT INTO time (start_time, hour, day,week,
         month, year, weekday)
-    SELECT
-        ti.start_time,
-        EXTRACT(hour FROM ti.start_time) AS hour,
-        EXTRACT(day FROM ti.start_time) AS day,
-        EXTRACT(week FROM ti.start_time) AS week,
-        EXTRACT(month FROM ti.start_time) AS month,
-        EXTRACT(year FROM ti.start_time) AS year,
-        EXTRACT(weekday FROM ti.start_time) AS weekday
-    FROM (
-        SELECT DISTINCT
-            timestamp 'epoch' + ts / 1000 * INTERVAL '1 second' AS start_time
-        FROM staging_events
-        WHERE page = 'NextSong'
-    ) ti;
+    SELECT DISTINCT
+        e.ts,
+        EXTRACT(hour FROM e.ts),
+        EXTRACT(day FROM e.ts),
+        EXTRACT(week FROM e.ts),
+        EXTRACT(month FROM e.ts),
+        EXTRACT(year FROM e.ts),
+        EXTRACT(weekday FROM e.ts)
+    FROM staging_events e;
 """)
 
 # QUERY LISTS
 
-#create_table_queries = [staging_events_table_create, staging_songs_table_create, songplay_table_create, user_table_create, song_table_create, artist_table_create, time_table_create]
-#drop_table_queries = [staging_events_table_drop, staging_songs_table_drop, songplay_table_drop, user_table_drop, song_table_drop, artist_table_drop, time_table_drop]
-create_table_queries = [songplay_table_create, user_table_create, song_table_create, artist_table_create, time_table_create]
-drop_table_queries = [songplay_table_drop, user_table_drop, song_table_drop, artist_table_drop, time_table_drop]
+create_table_queries = [staging_events_table_create, staging_songs_table_create, songplay_table_create, user_table_create, song_table_create, artist_table_create, time_table_create]
+drop_table_queries = [staging_events_table_drop, staging_songs_table_drop, songplay_table_drop, user_table_drop, song_table_drop, artist_table_drop, time_table_drop]
 copy_table_queries = [staging_events_copy, staging_songs_copy]
 insert_table_queries = [songplay_table_insert, user_table_insert, song_table_insert, artist_table_insert, time_table_insert]
